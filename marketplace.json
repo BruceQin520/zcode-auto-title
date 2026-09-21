@@ -1,0 +1,23 @@
+{
+  "name": "zcode-auto-title",
+  "description": "本地插件市场：会话自动命名补全（auto-title）。Local marketplace hosting the auto-title plugin for ZCode.",
+  "description_i18n": {
+    "en": "Local marketplace hosting the auto-title plugin for ZCode: fills in session titles that the built-in namer skips.",
+    "zh-CN": "本地插件市场：会话自动命名补全（auto-title），给内置命名漏掉的会话补语义标题。"
+  },
+  "owner": {
+    "name": "BruceQin520",
+    "url": "https://github.com/BruceQin520"
+  },
+  "plugins": [
+    {
+      "name": "auto-title",
+      "source": "./plugins/auto-title",
+      "description": "会话自动命名补全：Stop 钩子给内置命名漏掉的会话补生成语义标题，写入引擎 session.title 与 App 任务列表；支持历史会话批量补名。",
+      "description_i18n": {
+        "en": "Auto session titles: a Stop hook names sessions the built-in namer skipped, writing both the engine session store and the desktop task list; includes historical backfill.",
+        "zh-CN": "会话自动命名补全：Stop 钩子给内置命名漏掉的会话补生成语义标题，写入引擎 session.title 与 App 任务列表；支持历史会话批量补名。"
+      }
+    }
+  ]
+}

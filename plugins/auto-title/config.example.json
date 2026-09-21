@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "provider": null,
+  "model": null,
+  "maxTitleChars": 48,
+  "minInputChars": 6,
+  "nameOnFirstStop": false,
+  "includeSubagents": false,
+  "minMessages": 1,
+  "httpTimeoutSec": 20
+}

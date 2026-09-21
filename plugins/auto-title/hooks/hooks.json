@@ -1,0 +1,17 @@
+{
+  "description": "会话自动命名：Stop 时若会话仍未被命名（内置命名遗漏/延迟）则补生成一个语义标题",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "python3",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/auto_title.py"],
+            "timeoutMs": 30000
+          }
+        ]
+      }
+    ]
+  }
+}
