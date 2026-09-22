@@ -26,6 +26,12 @@
 实际跑下来，顶层会话里常年有一成左右属于这种情况（短开场白、单轮任务、延迟生成没等到
 下一轮）。
 
+**触发时机（v0.2 起）**：插件挂在 `UserPromptSubmit` 上——你按下发送、模型还没开始干活
+时，钩子毫秒级派发一个后台命名进程（钩子本身约 0.05s 返回，不阻塞发消息）。这样任务跑得
+久、或者中途被中断，会话列表里也已经有名字，而不是等跑完才知道这个会话在干什么。
+内置命名在第一轮结束时仍会再生成一次标题（它的检查只挡 `custom`），所以首轮结束后标题
+可能被引擎的精修版替换——那正好是「早期有名字、后期更准」。
+
 **本插件（`auto-title`）** 在 `Stop` 钩子里补生成：引擎没覆盖或漏掉的会话，用同一条
 提示词（与内置逐字一致，保证风格统一）生成 3–7 词的语义标题，写回引擎会话库和 App
 任务列表；另提供历史会话批量补名。
@@ -41,12 +47,12 @@
   "hooks": {
     "enabled": true,
     "events": {
-      "Stop": [
+      "UserPromptSubmit": [
         { "hooks": [ {
             "type": "command",
             "command": "python3 /绝对路径/plugins/auto-title/hooks/auto_title.py",
-            "timeout": 30,
-            "statusMessage": "Auto-title session"
+            "timeout": 10,
+            "statusMessage": "Naming session"
         } ] }
       ]
     }
@@ -61,7 +67,7 @@
 1. 设置 → 插件 → 创建 → 添加插件市场，填本仓库根目录（含 `marketplace.json`）。
 2. 在「个人」分段安装 `auto-title`。插件是复制到
    `~/.zcode/cli/plugins/cache/` 加载的，改源文件后要刷新市场并重装。
-3. 插件自带 `hooks/hooks.json`（`Stop` 事件），安装即注册，无需再配 config.json。
+3. 插件自带 `hooks/hooks.json`（`UserPromptSubmit` 事件），安装即注册，无需再配 config.json。
    —— 两种方式二选一，同时开会让脚本跑两遍（第二次会被 `title_source` 判重跳过，但没必要）。
 
 ## 用法
@@ -92,7 +98,6 @@ python3 $S --backfill --include-subagents   # 连子智能体会话一起命名�
 | `model` | 自动挑 flash | 模型 id，如 `GLM-5.3-Flash` |
 | `maxTitleChars` | `48` | 标题上限，按词边界截断 |
 | `minInputChars` | `6` | 取素材时的最小长度；短开场白会向后扫前 10 条用户消息 |
-| `nameOnFirstStop` | `false` | `true` = 第一次 Stop 就补，不等内置命名 |
 | `includeSubagents` | `false` | 是否给子智能体会话命名（它们在 App 列表里是隐藏的） |
 | `httpTimeoutSec` | `20` | 模型调用超时 |
 
@@ -111,6 +116,9 @@ python3 $S --backfill --include-subagents   # 连子智能体会话一起命名�
 
 - App 任务列表的刷新时机取决于客户端：外部写入的标题可能要切换/重开列表才显示
   （内置命名走的是引擎事件，能即时刷新）。
+- 命名只在 `UserPromptSubmit` 触发：以斜杠命令开场的会话不触发；同一个会话只派发一次
+  （`~/.zcode/auto-title/pending/<sid>.lock` 去重，失败后 90 秒可重试）。
+- 后台命名失败（provider 不可用等）只记日志，会话仍会由内置命名在首轮结束时兜底。
 - 生成依赖 `~/.zcode/v2/config.json` 里已配置好的 provider；全部不可用时会记
   `no usable provider` 并跳过。
 - 思考型模型偶尔返回空文本（思考块占满预算），脚本会重试一次。

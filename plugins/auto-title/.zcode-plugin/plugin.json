@@ -1,10 +1,10 @@
 {
   "name": "auto-title",
-  "version": "0.1.0",
-  "description": "会话自动命名补全：ZCode 内置命名只覆盖顶层会话的首轮一次尝试，本插件在 Stop 钩子里给漏掉的会话补一个语义标题（引擎 session.title + App 任务列表同步），并提供历史会话批量补名。",
+  "version": "0.2.0",
+  "description": "会话自动命名补全：ZCode 内置命名只覆盖顶层会话的首轮一次尝试，本插件在 UserPromptSubmit 钩子里（模型开始干活之前）派发后台命名，给漏掉的会话补一个语义标题（引擎 session.title + App 任务列表同步），并提供历史会话批量补名。",
   "description_i18n": {
-    "en": "Auto session titles: ZCode's built-in namer only fires once on the first turn of top-level sessions. This plugin fills the gaps on Stop — naming sessions the built-in skipped, writing both the engine session store and the desktop task list — and can backfill historical sessions.",
-    "zh-CN": "会话自动命名补全：ZCode 内置命名只覆盖顶层会话的首轮一次尝试，本插件在 Stop 钩子里给漏掉的会话补一个语义标题（引擎 session.title + App 任务列表同步），并提供历史会话批量补名。"
+    "en": "Auto session titles: ZCode's built-in namer only fires once on the first turn of top-level sessions. This plugin fills the gaps on UserPromptSubmit (before the turn runs) — naming sessions the built-in skipped, writing both the engine session store and the desktop task list — and can backfill historical sessions.",
+    "zh-CN": "会话自动命名补全：ZCode 内置命名只覆盖顶层会话的首轮一次尝试，本插件在 UserPromptSubmit 钩子里（模型开始干活之前）派发后台命名，给漏掉的会话补一个语义标题（引擎 session.title + App 任务列表同步），并提供历史会话批量补名。"
   },
   "author": {
     "name": "BruceQin520"

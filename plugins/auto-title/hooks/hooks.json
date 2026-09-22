@@ -1,14 +1,17 @@
 {
-  "description": "会话自动命名：Stop 时若会话仍未被命名（内置命名遗漏/延迟）则补生成一个语义标题",
+  "description": "会话自动命名：UserPromptSubmit 时（模型开始干活之前）派发后台命名，会话列表立刻有名字",
   "hooks": {
-    "Stop": [
+    "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "process",
             "command": "python3",
-            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/auto_title.py"],
-            "timeoutMs": 30000
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/auto_title.py"
+            ],
+            "timeoutMs": 10000,
+            "statusMessage": "Naming session"
           }
         ]
       }

@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 import urllib.error
@@ -31,7 +32,6 @@ TASKS_DB = os.path.join(ZCODE_HOME, "v2", "tasks-index.sqlite")
 PROVIDER_CONFIG = os.path.join(ZCODE_HOME, "v2", "config.json")
 APP_DIR = os.path.join(ZCODE_HOME, "auto-title")
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-STATE_PATH = os.path.join(APP_DIR, "state.json")
 LOG_PATH = os.path.join(APP_DIR, "auto-title.log")
 
 # 与 ZCode 内置命名（core.runtime session_title_generation）同一条提示词，
@@ -58,7 +58,6 @@ DEFAULTS = {
     "model": None,           # 模型 id，None = 自动挑 flash 档
     "maxTitleChars": 48,
     "minInputChars": 6,
-    "nameOnFirstStop": False,  # True = 不等待内置命名，第一次 Stop 就补
     "includeSubagents": False,
     "minMessages": 1,
     "httpTimeoutSec": 20,
@@ -104,25 +103,6 @@ def connect(path: str) -> sqlite3.Connection:
     con = sqlite3.connect(path, timeout=5.0)
     con.execute("PRAGMA busy_timeout = 5000")
     return con
-
-
-def read_state() -> dict:
-    try:
-        with open(STATE_PATH) as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def write_state(state: dict) -> None:
-    try:
-        os.makedirs(APP_DIR, exist_ok=True)
-        cutoff = int(time.time()) - 30 * 86400
-        state["seen"] = {k: v for k, v in state.get("seen", {}).items() if v > cutoff}
-        with open(STATE_PATH, "w") as f:
-            json.dump(state, f)
-    except Exception as exc:
-        log_line(f"state write failed: {exc}")
 
 
 # ---------------------------------------------------------------- 会话读取
@@ -375,7 +355,8 @@ def eligible(row, cfg: dict) -> tuple[bool, str]:
     return True, ""
 
 
-def name_session(con: sqlite3.Connection, sid: str, cfg: dict, force: bool) -> str:
+def name_session(con: sqlite3.Connection, sid: str, cfg: dict, force: bool,
+                 prompt_override: str | None = None) -> str:
     row = session_row(con, sid)
     if not row:
         return f"{sid}: not found"
@@ -386,7 +367,7 @@ def name_session(con: sqlite3.Connection, sid: str, cfg: dict, force: bool) -> s
         return f"{sid}: skip ({why})"
     if user_message_count(con, sid) < cfg["minMessages"]:
         return f"{sid}: skip (no user message yet)"
-    text = first_user_text(con, sid, min_chars=cfg["minInputChars"])
+    text = (prompt_override or "").strip() or first_user_text(con, sid, min_chars=cfg["minInputChars"])
     if len(text) < cfg["minInputChars"]:
         return f"{sid}: skip (no user input >= {cfg['minInputChars']} chars)"
     material = text[:1200]
@@ -410,8 +391,76 @@ def hook_session_id(payload: dict) -> str:
 
 # ---------------------------------------------------------------- 入口
 
+def pending_dir() -> str:
+    return os.path.join(APP_DIR, "pending")
+
+
+def spawn_namer(sid: str, prompt: str, cfg: dict) -> bool:
+    """后台起一个命名进程；钩子本身毫秒级返回，不拖慢用户发消息。"""
+    try:
+        os.makedirs(pending_dir(), exist_ok=True)
+        marker = os.path.join(pending_dir(), sid + ".lock")
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            if time.time() - os.path.getmtime(marker) < 90:
+                return False          # 上一次派发还在跑
+            os.utime(marker, None)
+        else:
+            os.close(fd)
+        prompt_file = os.path.join(pending_dir(), sid + ".prompt")
+        with open(prompt_file, "w") as f:
+            f.write(prompt[:4000])
+        os.chmod(prompt_file, 0o600)
+    except Exception as exc:
+        log_line(f"spawn prep failed: {exc}")
+        return False
+    cmd = [sys.executable, os.path.abspath(__file__), "--name-now", "--session", sid,
+           "--prompt-file", prompt_file]
+    try:
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception as exc:
+        log_line(f"spawn failed: {exc}")
+        return False
+    return True
+
+
+def run_name_now(sid: str, prompt_file: str, cfg: dict) -> int:
+    """后台 worker：生成并写回标题。"""
+    prompt = ""
+    if prompt_file:
+        try:
+            with open(prompt_file) as f:
+                prompt = f.read()
+        except Exception:
+            pass
+        try:
+            os.remove(prompt_file)
+        except OSError:
+            pass
+    con = connect(ENGINE_DB)
+    for attempt in range(5):            # 会话行可能还没落库，等一下再读
+        if session_row(con, sid):
+            break
+        time.sleep(1)
+    result = name_session(con, sid, cfg, force=False, prompt_override=prompt)
+    con.close()
+    log_line(f"name-now {result}")
+    try:
+        os.remove(os.path.join(pending_dir(), sid + ".lock"))
+    except OSError:
+        pass
+    return 0
+
+
 def run_hook(cfg: dict) -> int:
-    if os.environ.get("ZCODE_AUTO_TITLE_OFF") == "1":
+    """UserPromptSubmit：模型开始干活之前先把会话名定下来。
+
+    钩子只做判断和派发（毫秒级），模型调用在后台进程里跑——既不拖慢发消息，
+    也让任务被中断或长时间运行时，会话列表里已经有名字。
+    """
+    if os.environ.get("ZCODE_AUTO_TITLE_OFF") == "1" or not cfg["enabled"]:
         return 0
     try:
         payload = json.loads(sys.stdin.read() or "{}")
@@ -420,32 +469,19 @@ def run_hook(cfg: dict) -> int:
     sid = hook_session_id(payload)
     if not sid:
         return 0
+    prompt = str(payload.get("prompt") or "").strip()
+    if prompt.startswith("/"):          # 斜杠命令不是任务内容
+        return 0
     con = connect(ENGINE_DB)
     row = session_row(con, sid)
-    if not row:
-        con.close()
-        return 0
-    ok, why = eligible(row, cfg)
-    if not ok:
-        log_line(f"hook {sid}: skip ({why})")
-        con.close()
-        return 0
-    # 内置命名只覆盖「顶层 + interactive + 首轮」：这类会话由它先跑，我们等第二轮
-    # Stop 还没名字才补，避免和它的生成撞车重复调用。
-    builtin_owns = not row[4] and (not row[3] or row[3] == "interactive")
-    state = read_state()
-    seen = state.setdefault("seen", {})
-    if builtin_owns and not cfg["nameOnFirstStop"] and sid not in seen:
-        seen[sid] = int(time.time())
-        write_state(state)
-        log_line(f"hook {sid}: first Stop, waiting for built-in naming")
-        con.close()
-        return 0
-    result = name_session(con, sid, cfg, force=False)
     con.close()
-    log_line(f"hook {result}")
-    seen.pop(sid, None)
-    write_state(state)
+    if row:
+        ok, why = eligible(row, cfg)
+        if not ok:
+            log_line(f"hook {sid}: skip ({why})")
+            return 0
+    if spawn_namer(sid, prompt, cfg):
+        log_line(f"hook {sid}: naming dispatched before turn start")
     return 0
 
 
@@ -495,6 +531,9 @@ def main(argv: list[str]) -> int:
         CONFIG_PATH = value_of("--config", str, CONFIG_PATH)
         cfg.update({k: v for k, v in load_config().items()})
 
+    if "--name-now" in args:
+        return run_name_now(value_of("--session", str, ""),
+                            value_of("--prompt-file", str, ""), cfg)
     if "--session" in args:
         sid = value_of("--session", str, "")
         con = connect(ENGINE_DB)

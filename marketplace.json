@@ -13,10 +13,10 @@
     {
       "name": "auto-title",
       "source": "./plugins/auto-title",
-      "description": "会话自动命名补全：Stop 钩子给内置命名漏掉的会话补生成语义标题，写入引擎 session.title 与 App 任务列表；支持历史会话批量补名。",
+      "description": "会话自动命名补全：UserPromptSubmit 钩子在模型开始干活前派发后台命名，给内置命名漏掉的会话补生成语义标题，写入引擎 session.title 与 App 任务列表；支持历史会话批量补名。",
       "description_i18n": {
-        "en": "Auto session titles: a Stop hook names sessions the built-in namer skipped, writing both the engine session store and the desktop task list; includes historical backfill.",
-        "zh-CN": "会话自动命名补全：Stop 钩子给内置命名漏掉的会话补生成语义标题，写入引擎 session.title 与 App 任务列表；支持历史会话批量补名。"
+        "en": "Auto session titles: a UserPromptSubmit hook names sessions the built-in namer skipped before the turn runs, writing both the engine session store and the desktop task list; includes historical backfill.",
+        "zh-CN": "会话自动命名补全：UserPromptSubmit 钩子在模型开始干活前派发后台命名，给内置命名漏掉的会话补生成语义标题，写入引擎 session.title 与 App 任务列表；支持历史会话批量补名。"
       }
     }
   ]
